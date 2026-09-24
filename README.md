@@ -2,7 +2,10 @@
 
 用 **Tauri 2 + C** 重写的 Windows 显示器控制工具。通过 DDC/CI (VESA MCCS) 协议直接读写显示器的亮度、对比度、色彩、输入源等硬件参数。
 
-原项目 `monitor_ctrl` 是 Python + tkinter, 本仓库把它完整移植成了**原生 C 后端 + 现代 Web 前端**的桌面应用。
+原项目 [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl) 是 Python + tkinter, 本仓库把它完整移植成了**原生 C 后端 + 现代 Web 前端**的桌面应用。
+
+> **下载**: [Releases](https://github.com/TongenShen/monitor-ctrl-tauri/releases/latest) 里有编译好的
+> NSIS 安装包 (约 1.5 MB)，双击即可安装，无需管理员权限。
 
 ---
 
@@ -563,6 +566,8 @@ monitor_ctrl_tauri/
 │   └── make-icon.py            #   程序化生成 icon.ico (纯标准库)
 ├── package.json
 ├── README.md                   #   本文件
+├── LICENSE                     #   MIT
+├── .gitattributes
 └── .gitignore
 ```
 
@@ -595,4 +600,8 @@ monitor_ctrl_tauri/
 
 ## 许可
 
-沿用原 `monitor_ctrl` 项目的许可条款。
+[MIT](LICENSE)。
+
+本项目的 C 后端与前端逻辑移植自 Python/tkinter 版的
+[`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl)
+(Copyright (c) 2018 Miguel X)，沿用其 MIT 许可条款。
