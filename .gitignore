@@ -1,0 +1,22 @@
+# 依赖与构建产物
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+
+# 由构建脚本生成, 不入库
+src-tauri/binaries/
+
+# C 后端产物 (用 native/build.bat 重新生成)
+native/*.exe
+native/*.o
+
+# Python 脚本缓存
+__pycache__/
+*.pyc
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

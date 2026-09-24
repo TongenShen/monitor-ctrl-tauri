@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>显示器控制</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ============ 标题栏 ============ -->
+  <header class="titlebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </svg>
+      <div>
+        <h1>显示器控制</h1>
+        <p class="subtitle">DDC/CI · VESA MCCS</p>
+      </div>
+    </div>
+
+    <div class="titlebar-actions">
+      <span id="backend-pill" class="pill pill--pending" title="后端状态">
+        <span class="dot"></span><span id="backend-text">连接中…</span>
+      </span>
+      <button id="btn-refresh" class="btn btn--icon" title="重新枚举显示器 (热插拔后使用)">
+        <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ 主体 ============ -->
+  <main class="layout">
+    <!-- 侧栏: 显示器列表 -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h2>显示器</h2>
+        <span id="monitor-count" class="badge">0</span>
+      </div>
+      <nav id="monitor-list" class="monitor-list" role="tablist"></nav>
+      <div class="sidebar-foot">
+        <button id="btn-log" class="btn btn--ghost btn--block">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          操作日志
+        </button>
+      </div>
+    </aside>
+
+    <!-- 内容区 -->
+    <section class="content">
+      <!-- 空状态 / 错误 -->
+      <div id="placeholder" class="placeholder">
+        <svg class="placeholder-icon" viewBox="0 0 24 24">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+        </svg>
+        <h2 id="placeholder-title">正在检测显示器…</h2>
+        <p id="placeholder-msg">首次连接 DDC/CI 需要一点时间</p>
+        <button id="btn-retry" class="btn btn--primary" hidden>重试</button>
+      </div>
+
+      <!-- 控制面板 (选中显示器后显示) -->
+      <div id="panel" class="panel" hidden>
+        <div class="panel-head">
+          <div>
+            <h2 id="panel-title">显示器</h2>
+            <p id="panel-desc" class="muted"></p>
+          </div>
+          <div class="panel-head-actions">
+            <button id="btn-info" class="btn btn--ghost">详细信息</button>
+          </div>
+        </div>
+
+        <div id="controls" class="controls"></div>
+
+        <div class="panel-foot">
+          <div class="danger-zone">
+            <span class="danger-label">危险操作</span>
+            <button id="btn-auto-setup" class="btn btn--warn">自动调整</button>
+            <button id="btn-reset" class="btn btn--danger">恢复出厂设置</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ 弹层: 详细信息 ============ -->
+  <div id="modal-info" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>显示器详细信息</h3>
+        <button class="btn btn--icon" data-close="modal-info" aria-label="关闭">
+          <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="info-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ 弹层: 日志 ============ -->
+  <div id="modal-log" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>操作日志</h3>
+        <div class="modal-head-actions">
+          <button id="btn-clear-log" class="btn btn--ghost btn--sm">清空</button>
+          <button class="btn btn--icon" data-close="modal-log" aria-label="关闭">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="log-body" class="modal-body modal-body--log"></div>
+    </div>
+  </div>
+
+  <!-- ============ 确认对话框 ============ -->
+  <div id="modal-confirm" class="modal" hidden>
+    <div class="modal-card modal-card--sm">
+      <div class="modal-head">
+        <h3 id="confirm-title">确认</h3>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-msg"></p>
+      </div>
+      <div class="modal-foot">
+        <button id="confirm-cancel" class="btn btn--ghost">取消</button>
+        <button id="confirm-ok" class="btn btn--danger">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Toast ============ -->
+  <div id="toast-host" class="toast-host"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

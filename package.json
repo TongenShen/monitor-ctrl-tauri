@@ -1,0 +1,20 @@
+{
+  "name": "monitor-ctrl-tauri",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DDC/CI 显示器控制工具 (C 后端 + Tauri 前端)",
+  "scripts": {
+    "native": "cd native && build.bat",
+    "sidecar": "node scripts/stage-sidecar.mjs",
+    "dev": "npm run sidecar && tauri dev",
+    "build": "npm run sidecar && tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
+  }
+}
