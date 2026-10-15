@@ -1,11 +1,11 @@
 # MonitorCtrl
 
-用 **Tauri 2 + C** 重写的 Windows 显示器控制工具。通过 DDC/CI (VESA MCCS) 协议直接读写显示器的亮度、对比度、色彩、输入源等硬件参数。
+用 **Tauri 2 + C** 重写的 Windows 显示器控制工具。通过 DDC/CI (VESA MCCS) 协议直接读写显示器的亮度、对比度、色彩、输入源等硬件参数。支持系统托盘常驻，左键弹出快捷面板快速调节亮度/输入源/关屏。
 
 原项目 [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl) 是 Python + tkinter, 本仓库把它完整移植成了**原生 C 后端 + 现代 Web 前端**的桌面应用。
 
 > **下载**: [Releases](https://github.com/TongenShen/monitor-ctrl-tauri/releases/latest) 里有编译好的
-> NSIS 安装包 (约 1.5 MB)，双击即可安装，无需管理员权限。
+> NSIS 安装包 (约 1.5 MB)，双击即可安装。
 
 ---
 
@@ -31,9 +31,9 @@
 
 ### 普通用户 (直接安装)
 
-1. 取安装包 `MonitorCtrl_1.0.0_x64-setup.exe`
+1. 取安装包 `MonitorCtrl_1.3.0_x64-setup.exe`
    (位于 `src-tauri/target/release/bundle/nsis/`, 约 1.5 MB)
-2. 双击安装 —— **按当前用户安装, 不需要管理员权限**
+2. 双击安装 —— 按当前用户安装
 3. 启动「MonitorCtrl」
 
 **运行要求**: Windows 10 1809+ 或 Windows 11, 且系统已安装 WebView2 Runtime
@@ -42,11 +42,14 @@
 ### 开发者 (从源码跑)
 
 ```powershell
-cd monitor_ctrl_tauri
+cd monitor-ctrl-tauri
 cd native; .\build.bat; cd ..   # 1) 编译 C 后端
 npm install                     # 2) 装 Tauri CLI
 npm run dev                     # 3) 开发模式启动
 ```
+
+> ⚠️ **已知问题**: `npm run dev` 在当前环境下前端窗口无法正常启动
+> (后端 sidecar 能起来, 但 WebView 窗口不显示)。建议直接 `npm run build` 打 NSIS 安装包测试。
 
 完整流程见 [构建与运行](#构建与运行)。
 
@@ -177,6 +180,13 @@ flowchart TD
 - `auto_setup` — 自动调整 (对应 `0x1E` Auto Setup)
 - `reset_factory` — 恢复出厂设置 (对应 `0x04`, 前端会先弹确认框)
 
+### 系统托盘
+
+- **点窗口 × 不退出**, 而是最小化到系统托盘 (后端常驻, 再次打开秒开)
+- **左键点托盘图标**: 弹出快捷小面板 (亮度滑块 / 输入源选择 / 关闭显示器)
+- **右键点托盘图标**: 菜单「显示主窗口」「退出」
+- 快捷面板失焦自动收起, 定位在托盘上方不贴任务栏
+
 ### 其他
 
 - 多显示器枚举与切换 (侧栏列表)
@@ -184,6 +194,7 @@ flowchart TD
 - 后端状态指示灯 + 一键重启后端
 - 热插拔后重新枚举显示器 (F5)
 - 前后端全程 UTF-8, 中文显示器描述 / caps 字符串不乱码
+- 后端控制台黑窗完全隐藏 (CREATE_NO_WINDOW, 无割裂感)
 
 ---
 
@@ -554,13 +565,16 @@ monitor_ctrl_tauri/
 │   │   └── sidecar.rs          #   子进程管理 / 串行化 / 日志
 │   ├── capabilities/default.json
 │   ├── icons/icon.ico
-│   ├── build.rs                #   注入目标三元组
+│   ├── build.rs                #   注入目标三元组 + Windows manifest
+│   ├── app.manifest            #   Windows 应用 manifest (UAC 级别)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── ui/                         # 前端 (无框架)
-│   ├── index.html
+│   ├── index.html              #   主界面
+│   ├── popup.html              #   托盘快捷面板
+│   ├── popup.js                #   快捷面板逻辑
 │   ├── style.css               #   设计令牌 + 深色/浅色主题
-│   └── app.js                  #   状态管理 / 渲染 / 交互
+│   └── app.js                  #   主界面状态管理 / 渲染 / 交互
 ├── scripts/
 │   ├── stage-sidecar.mjs       #   把 exe 复制成带三元组后缀的名字
 │   └── make-icon.py            #   程序化生成 icon.ico (纯标准库)
@@ -592,6 +606,9 @@ monitor_ctrl_tauri/
 | caps string 枚举过滤 | ✅ 端到端打通 (C → Rust → 前端) |
 | 冒烟测试 `test_rpc.py` | ✅ 全绿 (含边界情况) |
 | Tauri 应用编译 / 启动 | ✅ |
+| 后端黑窗隐藏 | ✅ CREATE_NO_WINDOW, 无控制台窗口 |
+| 系统托盘常驻 | ✅ × 缩托盘 / 左键唤起 / 右键菜单退出 |
+| 托盘快捷面板 | ✅ 亮度 / 输入源 / 关闭显示器 |
 | UI 视觉验证 | ✅ 已截图确认 |
 | NSIS 安装包 | ✅ 1.5 MB |
 | 文档 | ✅ 本文件 |
