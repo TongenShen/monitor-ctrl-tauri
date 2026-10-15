@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MonitorCtrl 快捷面板</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      padding: 12px;
+      min-width: 240px;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+    }
+    .section {
+      margin-bottom: 12px;
+    }
+    .section:last-child {
+      margin-bottom: 0;
+    }
+    .section-title {
+      font-size: 12px;
+      color: var(--fg-muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .brightness-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brightness-row input[type=range] {
+      flex: 1;
+    }
+    .brightness-value {
+      width: 36px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+    select {
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--fg);
+      font-size: 13px;
+    }
+    select option {
+      background: var(--bg-raised);
+      color: var(--fg);
+    }
+    .btn-off {
+      width: 100%;
+      padding: 8px;
+      background: var(--bg-danger, #c0392b);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn-off:hover {
+      opacity: 0.9;
+    }
+    .loading {
+      color: var(--fg-muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="loading">加载中...</div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

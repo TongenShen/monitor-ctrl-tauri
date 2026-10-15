@@ -3,18 +3,13 @@
 //! 架构
 //! ----
 //!   [前端 HTML/CSS/JS]  --invoke-->  [Rust 层]  --stdio JSON-->  [C 后端]  --Dxva2-->  显示器
-//!
-//! 为什么 C 后端独立成进程 (sidecar) 而不是编成 N-API / FFI:
-//!   * DDC/CI 是慢速 I2C, 必须串行。stdio 管道天然就是单通道串行队列。
-//!   * 后端崩溃不会带崩界面, 且重启成本极低 (进程级隔离)。
-//!   * 无需处理 Node ABI / FFI 内存所有权问题。
 
 mod sidecar;
 
 use sidecar::AppState;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,8 +26,7 @@ pub fn run() {
             sidecar::enum_tables,
         ])
         .setup(|app| {
-            // 启动 C 后端。失败不致命 —— 前端会显示错误并提供"重试"按钮,
-            // 这比直接崩溃友好得多。
+            // 启动 C 后端
             let handle = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
                 match sidecar::start_sidecar(&handle) {
@@ -41,8 +35,18 @@ pub fn run() {
                 }
             });
 
-            // ---- 系统托盘 ----
-            // 右键菜单: 显示主窗口 / 退出
+            // ---- 创建快捷面板 popup 窗口 (启动时创建, 默认隐藏) ----
+            WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup.html".into()))
+                .title("快捷面板")
+                .decorations(false)
+                .always_on_top(true)
+                .resizable(false)
+                .inner_size(260.0, 240.0)
+                .skip_taskbar(true)
+                .visible(false)
+                .build()?;
+
+            // ---- 系统托盘右键菜单 ----
             let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
@@ -52,20 +56,34 @@ pub fn run() {
                 .tooltip("MonitorCtrl - 显示器控制")
                 .menu(&menu)
                 .on_tray_icon_event(|tray, event| {
-                    // 左键单击托盘图标: 切换窗口显示/隐藏
+                    // 左键单击托盘: 弹出/隐藏快捷面板 popup
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
+                        position,
                         ..
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
+                        if let Some(popup) = app.get_webview_window("popup") {
+                            if popup.is_visible().unwrap_or(false) {
+                                let _ = popup.hide();
                             } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                                // 动态获取 popup 实际物理尺寸 (DPI 缩放下跟逻辑尺寸不同)
+                                let size = popup.outer_size().unwrap_or(
+                                    tauri::PhysicalSize { width: 280, height: 320 }
+                                );
+                                let popup_w = size.width as f64;
+                                let popup_h = size.height as f64;
+
+                                // 定位: 托盘图标上方居中, 底部留 12px 边距不贴任务栏
+                                let x = position.x as f64 - popup_w / 2.0;
+                                let y = position.y as f64 - popup_h - 12.0;
+
+                                let _ = popup.set_position(PhysicalPosition::new(x as i32, y as i32));
+                                let _ = popup.show();
+                                let _ = popup.set_focus();
+                                let _ = popup.emit("popup-refresh", ());
                             }
                         }
                     }
@@ -78,10 +96,9 @@ pub fn run() {
                         }
                     }
                     "quit" => {
-                        // 真正退出: 先清理 sidecar, 再退出应用
                         if let Some(state) = app.try_state::<AppState>() {
                             if let Ok(mut guard) = state.sidecar.lock() {
-                                *guard = None; // Drop 里会发 shutdown 并 kill
+                                *guard = None;
                             }
                         }
                         app.exit(0);
@@ -94,14 +111,17 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
-                // 点窗口 × 按钮: 不真正退出, 而是隐藏到托盘。
-                // 只有从托盘菜单选"退出"才会真正结束进程。
                 WindowEvent::CloseRequested { api, .. } => {
                     let _ = window.hide();
                     api.prevent_close();
                 }
+                // popup 窗口失去焦点时自动隐藏 (点别处自动关)
+                WindowEvent::Focused(false) => {
+                    if window.label() == "popup" {
+                        let _ = window.hide();
+                    }
+                }
                 WindowEvent::Destroyed => {
-                    // 真正销毁时才清理 sidecar (从托盘菜单退出时会走到这里)
                     if let Some(state) = window.try_state::<AppState>() {
                         if let Ok(mut guard) = state.sidecar.lock() {
                             *guard = None;
