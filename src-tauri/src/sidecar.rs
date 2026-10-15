@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
+use std::os::windows::process::CommandExt;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
@@ -17,6 +18,13 @@ use std::sync::Mutex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
+
+/// CREATE_NO_WINDOW: 启动控制台子系统的子进程时不新建控制台窗口。
+///
+/// C 后端是控制台子系统程序 (要靠 stdin/stdout 走 JSON-RPC), 而 Tauri 主程序
+/// 是 GUI 子系统、没有自己的控制台。不加这个 flag, Windows 会自动给子进程
+/// 弹一个黑窗口。加了之后管道照常工作, 只是不弹窗。
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 一次 RPC 调用的结果
 pub type RpcResult<T> = Result<T, String>;
@@ -36,6 +44,7 @@ impl Sidecar {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()?;
 
         let stdin = child.stdin.take().expect("stdin 未创建");
