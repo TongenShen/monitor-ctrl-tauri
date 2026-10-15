@@ -1,290 +1,310 @@
 # MonitorCtrl
 
-用 **Tauri 2 + C** 重写的 Windows 显示器控制工具。通过 DDC/CI (VESA MCCS) 协议直接读写显示器的亮度、对比度、色彩、输入源等硬件参数。支持系统托盘常驻，左键弹出快捷面板快速调节亮度/输入源/关屏。
+**简体中文版 (Simplified Chinese): [README.zh-CN.md](README.zh-CN.md)**
 
-原项目 [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl) 是 Python + tkinter, 本仓库把它完整移植成了**原生 C 后端 + 现代 Web 前端**的桌面应用。
+A Windows monitor control tool rewritten with **Tauri 2 + C**. It reads and writes hardware parameters of your monitor — brightness, contrast, color, input source, etc. — directly over the DDC/CI (VESA MCCS) protocol. It lives in the system tray: left-click the tray icon for a quick panel to adjust brightness / switch input source / power the display off.
 
-> **下载**: [Releases](https://github.com/TongenShen/monitor-ctrl-tauri/releases/latest) 里有编译好的
-> NSIS 安装包 (约 1.5 MB)，双击即可安装。
+The original project [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl) was Python + tkinter; this repository is a complete port to a **native C backend + modern Web frontend** desktop application.
 
----
-
-## 目录
-
-- [快速开始](#快速开始)
-- [为什么这样分层](#为什么这样分层)
-- [架构](#架构)
-- [从原项目到新项目的映射](#从原项目到新项目的映射)
-- [功能清单](#功能清单)
-- [构建前提](#构建前提)
-- [构建与运行](#构建与运行)
-- [JSON-RPC 协议参考](#json-rpc-协议参考)
-- [两个硬件坑 (重要)](#两个硬件坑-重要)
-- [常见问题](#常见问题)
-- [目录结构](#目录结构)
-- [当前状态](#当前状态)
-- [许可](#许可)
+> **Download**: prebuilt [NSIS](https://nsis.sourceforge.io/) installer (about 1.5 MB) is available on the [Releases](https://github.com/TongenShen/monitor-ctrl-tauri/releases/latest) page — double-click to install.
 
 ---
 
-## 快速开始
+## Table of Contents
 
-### 普通用户 (直接安装)
+- [Quick Start](#quick-start)
+- [Why This Layering](#why-this-layering)
+- [Architecture](#architecture)
+- [Mapping from the Original Project](#mapping-from-the-original-project)
+- [Feature List](#feature-list)
+- [Build Prerequisites](#build-prerequisites)
+- [Build & Run](#build--run)
+- [JSON-RPC Protocol Reference](#json-rpc-protocol-reference)
+- [Two Hardware Pitfalls (Important)](#two-hardware-pitfalls-important)
+- [FAQ](#faq)
+- [Directory Structure](#directory-structure)
+- [Current Status](#current-status)
+- [License](#license)
 
-1. 取安装包 `MonitorCtrl_1.3.0_x64-setup.exe`
-   (位于 `src-tauri/target/release/bundle/nsis/`, 约 1.5 MB)
-2. 双击安装 —— 按当前用户安装
-3. 启动「MonitorCtrl」
+---
 
-**运行要求**: Windows 10 1809+ 或 Windows 11, 且系统已安装 WebView2 Runtime
-(Win11 和较新的 Win10 已内置, 缺失时安装包会自动下载)。
+## Quick Start
 
-### 开发者 (从源码跑)
+### End users (install directly)
+
+1. Grab the installer `MonitorCtrl_1.3.0_x64-setup.exe`
+   (at `src-tauri/target/release/bundle/nsis/`, about 1.5 MB)
+2. Double-click to install — installs for the current user
+3. Launch "MonitorCtrl"
+
+**Requirements**: Windows 10 1809+ or Windows 11, with the WebView2 Runtime installed
+(WebView2 ships with Windows 11 and newer Windows 10 builds; the installer downloads it automatically if missing).
+
+### Developers (run from source)
 
 ```powershell
 cd monitor-ctrl-tauri
-cd native; .\build.bat; cd ..   # 1) 编译 C 后端
-npm install                     # 2) 装 Tauri CLI
-npm run dev                     # 3) 开发模式启动
+cd native; .\build.bat; cd ..   # 1) compile the C backend
+npm install                     # 2) install the Tauri CLI
+npm run dev                     # 3) start in dev mode
 ```
 
-> ⚠️ **已知问题**: `npm run dev` 在当前环境下前端窗口无法正常启动
-> (后端 sidecar 能起来, 但 WebView 窗口不显示)。建议直接 `npm run build` 打 NSIS 安装包测试。
+> ⚠️ **Known issue**: `npm run dev` may not show the frontend window in some environments
+> (the sidecar backend starts, but the WebView window does not appear). Building the NSIS installer
+> with `npm run build` and testing that is recommended instead.
 
-完整流程见 [构建与运行](#构建与运行)。
+See [Build & Run](#build--run) for the full workflow.
 
-### 前置条件 (两个都容易忽略)
+### Prerequisites (both are easy to miss)
 
-- **只支持外接显示器**。笔记本内屏、虚拟显示器, 以及部分 KVM / 视频采集卡
-  不透传 DDC/CI, 会被识别为"不支持"。
-- **显示器 OSD 菜单里的 DDC/CI 必须是开启的** —— 很多显示器出厂默认关闭,
-  这种情况下所有属性都会读不到。
+- **External monitors only**. Laptop built-in panels, virtual displays, and some KVM switches /
+  video capture cards do not pass DDC/CI through, so they are reported as "unsupported".
+- **DDC/CI must be enabled in the monitor's OSD menu** — many monitors ship with it off by default,
+  in which case every property reads back as unsupported.
 
 ---
 
-## 为什么这样分层
+## Why This Layering
 
-| 决策 | 理由 |
+| Decision | Rationale |
 | --- | --- |
-| **C 做后端** | DDC/CI 最终要调 `Dxva2.dll` 的 Win32 API, C 直接 `#include` 头文件链接即可, 零运行时依赖, 单文件 92 KB |
-| **Tauri 而不是 Electron** | 复用系统 WebView2, 安装包 ~3 MB 而非 ~150 MB, 内存占用低一个数量级 |
-| **后端做成 sidecar 子进程** | 见下 |
-| **stdio + 行分隔 JSON** 作为 IPC | 见下 |
+| **C as the backend** | DDC/CI ultimately calls the Win32 API in `Dxva2.dll`. C just `#include`s the header and links it — zero runtime dependencies, single 92 KB file |
+| **Tauri instead of Electron** | Reuses the system WebView2; installer is ~3 MB instead of ~150 MB, memory footprint an order of magnitude lower |
+| **Backend as a sidecar child process** | See below |
+| **stdio + line-delimited JSON as IPC** | See below |
 
-### 为什么后端要单独一个进程
+### Why a separate backend process
 
-1. **DDC/CI 是慢速 I2C 总线, 必须串行化。**
-   一次读写要几十到几百毫秒。如果并发下发指令, 显示器固件会返回校验和错误甚至直接不响应。
-   stdin/stdout 天然就是一个**单通道串行队列** —— 一次只有一条请求在飞, 不需要任何锁, 也不会有竞态。
+1. **DDC/CI is a slow I2C bus and must be serialized.**
+   A single read/write takes tens to hundreds of milliseconds. If commands are issued concurrently,
+   the monitor firmware returns checksum errors or stops responding altogether.
+   stdin/stdout is naturally a **single-channel serial queue** — only one request in flight at a time,
+   no locks needed, no race conditions.
 
-2. **崩溃隔离。**
-   显示器驱动是内核态的, 某些 KVM / 采集卡 / 虚拟显示器会让 `Dxva2` 调用卡死或异常。
-   放子进程里, 崩了只是后端掉线, 前端可以弹个"重试"按钮重启它, 而不是整个应用消失。
+2. **Crash isolation.**
+   Monitor drivers run in kernel mode; certain KVM / capture cards / virtual displays can hang or
+   misbehave inside `Dxva2` calls. Running in a child process means a crash only drops the backend —
+   the frontend can show a "retry" button and restart it, instead of losing the whole app.
 
-3. **绕开 FFI 所有权问题。**
-   如果 C 代码编成 `.dll` 用 Rust 的 `extern "C"` 调, 就要手工管理内存所有权、字符串生命周期、错误码转换, 还容易踩到 ABI 不匹配。
-   走管道的话 C 侧只需要会读写文本行, Rust 侧只需要会发 JSON, 边界极清晰。
+3. **Avoids FFI ownership issues.**
+   If the C code were compiled to a `.dll` and called from Rust via `extern "C"`, you would have to
+   manually manage memory ownership, string lifetimes, error-code conversion, and risk ABI mismatch.
+   Through pipes, the C side only needs to read/write text lines and the Rust side only needs to send
+   JSON — a very clean boundary.
 
-4. **无端口、无防火墙弹窗、无网络暴露。**
-   不是本地 socket, 也不是 HTTP —— 只是父子进程之间的一对匿名管道。
+4. **No ports, no firewall prompts, no network exposure.**
+   Not a local socket and not HTTP — just a pair of anonymous pipes between parent and child.
 
-> **代价**: 前端无法直接调硬件, 所有操作都要经过一次 JSON 序列化。对每秒几次的 UI 交互来说完全无感。
+> **Cost**: the frontend cannot touch hardware directly; every operation goes through one round of
+> JSON serialization. For UI interactions a few times per second, this is imperceptible.
 
 ---
 
-## 架构
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Frontend["前端 (ui/ — HTML + CSS + JS, 无框架)"]
-        A["滑块 / 下拉框 / 数字输入"]
-        B["app.js<br/>状态管理 · 渲染 · 交互"]
+    subgraph Frontend["Frontend (ui/ — HTML + CSS + JS, no framework)"]
+        A["Slider / dropdown / number input"]
+        B["app.js<br/>state · rendering · interaction"]
     end
 
-    subgraph Rust["Tauri 主进程 (src-tauri/)"]
-        C["lib.rs<br/>Builder · 生命周期"]
-        D["sidecar.rs<br/>AppState · 串行化 · 日志"]
+    subgraph Rust["Tauri main process (src-tauri/)"]
+        C["lib.rs<br/>Builder · lifecycle"]
+        D["sidecar.rs<br/>AppState · serialization · logging"]
     end
 
-    subgraph Backend["C 后端 (native/ — 独立进程)"]
-        E["monitor_rpc.c<br/>stdio JSON-RPC 服务器"]
-        F["monitor_core.c<br/>Dxva2 封装 · 重试逻辑"]
-        G["vcp_code.c<br/>VCP 码表 (MCCS)"]
-        H["mjson.c<br/>极简 JSON 读写"]
+    subgraph Backend["C backend (native/ — separate process)"]
+        E["monitor_rpc.c<br/>stdio JSON-RPC server"]
+        F["monitor_core.c<br/>Dxva2 wrapper · retry logic"]
+        G["vcp_code.c<br/>VCP code table (MCCS)"]
+        H["mjson.c<br/>minimal JSON read/write"]
     end
 
     I["Dxva2.dll / user32.dll<br/>(Win32 Low-Level Monitor Config API)"]
-    J["显示器固件<br/>DDC/CI over I2C"]
+    J["Monitor firmware<br/>DDC/CI over I2C"]
 
     A --> B
     B -->|"invoke('rpc', {method, params})"| D
     D --> C
-    D -->|"stdin: 一行一个 JSON 请求"| E
-    E -->|"stdout: 一行一个 JSON 响应"| D
+    D -->|"stdin: one JSON request per line"| E
+    E -->|"stdout: one JSON response per line"| D
     E --> F
     E --> G
     E --> H
     F --> I
-    I -->|"I2C 慢速总线"| J
-    F -.->|"stderr: 诊断信息"| D
+    I -->|"I2C slow bus"| J
+    F -.->|"stderr: diagnostic messages"| D
 ```
 
-**数据流**: 用户拖动滑块 → `app.js` 只在**松手时**调一次 `invoke` → Rust 把请求写进子进程 stdin → C 解析后调 `Dxva2` → 显示器响应 → C 把结果写 stdout → Rust 读一行返回给前端 → 前端更新 UI。
+**Data flow**: user drags a slider → `app.js` calls `invoke` **once on release** → Rust writes the
+request into the child's stdin → C parses it and calls `Dxva2` → the monitor responds → C writes the
+result to stdout → Rust reads one line and returns it to the frontend → the UI updates.
 
-**stderr 只用于日志**, 会被 Rust 侧转发并打上 `[monitor_rpc]` 前缀, 永远不混进 JSON 流。
+**stderr is for logging only** — it is forwarded by the Rust side and tagged with a `[monitor_rpc]`
+prefix; it never mixes into the JSON stream.
 
 ---
 
-## 从原项目到新项目的映射
+## Mapping from the Original Project
 
-| 原 `monitor_ctrl` (Python) | 新项目 | 说明 |
+| Original `monitor_ctrl` (Python) | This project | Notes |
 | --- | --- | --- |
-| `vcp.py` → `class PhyMonitor` | `native/monitor_core.c` + `.h` | Dxva2 调用、caps 解析、属性读写 |
-| `vcp_code.py` (VCP 码表) | `native/vcp_code.c` + `.h` | MCCS 码表 + 枚举表 + 名称查找 |
-| `tkui.py` (tkinter/ttk) | `ui/index.html` + `style.css` + `app.js` | 全新深色 UI, 无框架 |
-| `monitor_ctrl.py` (argparse CLI) | `native/monitor_rpc.c` (JSON-RPC) | CLI 换成进程间协议 |
-| 进程内直接 `setattr` | **新增** Rust sidecar 层 | 跨进程串行化 + 崩溃隔离 |
-| — | `native/mjson.c` | 自写的极简 JSON 库, 避免引入 cJSON |
+| `vcp.py` → `class PhyMonitor` | `native/monitor_core.c` + `.h` | Dxva2 calls, caps parsing, property read/write |
+| `vcp_code.py` (VCP code table) | `native/vcp_code.c` + `.h` | MCCS code table + enum tables + name lookup |
+| `tkui.py` (tkinter/ttk) | `ui/index.html` + `style.css` + `app.js` | Brand-new dark UI, no framework |
+| `monitor_ctrl.py` (argparse CLI) | `native/monitor_rpc.c` (JSON-RPC) | CLI replaced with an inter-process protocol |
+| In-process `setattr` calls | **New** Rust sidecar layer | Cross-process serialization + crash isolation |
+| — | `native/mjson.c` | Hand-written minimal JSON library, avoids pulling in cJSON |
 
 ---
 
-## 功能清单
+## Feature List
 
-### 读取 (`get_props`)
+### Read (`get_props`)
 
-| 属性 | VCP 码 | 说明 |
+| Property | VCP code | Description |
 | --- | --- | --- |
-| `brightness` / `brightness_max` | `0x10` | 亮度 |
-| `contrast` / `contrast_max` | `0x12` | 对比度 |
-| `rgb_gain` / `rgb_gain_max` | `0x16/0x18/0x1A` | RGB 三通道增益 |
-| `color_temperature` | `0x0C` | 色温 (开尔文), 由 `3000 + 当前值 × 步进` 换算 |
-| `color_preset` | `0x14` | 颜色预设 (sRGB / 4000K / 6500K / User Mode…) |
-| `osd_language` | `0xCC` | OSD 菜单语言 |
-| `power_mode` | `0xD6` | 电源模式 (on / off) |
-| `input_src` | `0x60` | 输入源 (DisplayPort 2 / HDMI 1…) |
+| `brightness` / `brightness_max` | `0x10` | Brightness |
+| `contrast` / `contrast_max` | `0x12` | Contrast |
+| `rgb_gain` / `rgb_gain_max` | `0x16/0x18/0x1A` | RGB channel gains |
+| `color_temperature` | `0x0C` | Color temperature (Kelvin), computed as `3000 + current value × step` |
+| `color_preset` | `0x14` | Color preset (sRGB / 4000K / 6500K / User Mode…) |
+| `osd_language` | `0xCC` | OSD menu language |
+| `power_mode` | `0xD6` | Power mode (on / off) |
+| `input_src` | `0x60` | Input source (DisplayPort 2 / HDMI 1…) |
 
-任何显示器不支持的字段返回 JSON `null`, 对应的枚举列表返回 `[]`, 前端会优雅降级 (禁用控件 + 提示)。
+Any field a monitor does not support returns JSON `null`, and the corresponding enum list returns `[]`;
+the frontend degrades gracefully (disables the control and shows a hint).
 
-### 读取 (`get_info`)
+### Read (`get_info`)
 
-`model` · `description` · `display_type` · `poweron_hours` (`0xC0` 累计开机时长) · `panel_type` (`0xB2` 面板像素排列) · `caps` (完整 DDC/CI 能力字符串)
+`model` · `description` · `display_type` · `poweron_hours` (`0xC0` cumulative power-on time) ·
+`panel_type` (`0xB2` pixel arrangement) · `caps` (full DDC/CI capability string)
 
-### 写入 (`set_prop`)
+### Write (`set_prop`)
 
-亮度、对比度、RGB 增益 (一次发三个通道)、色温、颜色预设、OSD 语言、电源模式、输入源, 以及一个通用逃生口 `vcp:<VCP名>` 可以写任意 VCP 码。
+Brightness, contrast, RGB gain (all three channels in one call), color temperature, color preset,
+OSD language, power mode, input source — plus a generic escape hatch `vcp:<VCP name>` that writes
+any VCP code.
 
-> **EEPROM 保护**: 前端在提交前会比对当前值, **值没变就不下发**。颜色预设和 OSD 语言写在显示器 EEPROM 里, 反复写会磨损, 这个检查沿用了原 Python 版的逻辑。
+> **EEPROM protection**: the frontend compares against the current value before committing and
+> **does not issue the write if nothing changed**. Color presets and OSD language are stored in the
+> monitor's EEPROM; repeated writes wear it out. This check is inherited from the original Python version.
 
-### 动作 (`action`)
+### Actions (`action`)
 
-- `auto_setup` — 自动调整 (对应 `0x1E` Auto Setup)
-- `reset_factory` — 恢复出厂设置 (对应 `0x04`, 前端会先弹确认框)
+- `auto_setup` — Auto Setup (maps to `0x1E`)
+- `reset_factory` — factory reset (maps to `0x04`; the frontend shows a confirmation dialog first)
 
-### 系统托盘
+### System Tray
 
-- **点窗口 × 不退出**, 而是最小化到系统托盘 (后端常驻, 再次打开秒开)
-- **左键点托盘图标**: 弹出快捷小面板 (亮度滑块 / 输入源选择 / 关闭显示器)
-- **右键点托盘图标**: 菜单「显示主窗口」「退出」
-- 快捷面板失焦自动收起, 定位在托盘上方不贴任务栏
+- **Clicking the window × does not quit** — it minimizes to the system tray (the backend stays
+  resident; reopening is instant)
+- **Left-click the tray icon**: pops up a quick panel (brightness slider / input source selector /
+  power off)
+- **Right-click the tray icon**: menu with "Show main window" and "Exit"
+- The quick panel auto-hides when it loses focus and is positioned above the tray, 12 px clear of the taskbar
 
-### 其他
+### Misc
 
-- 多显示器枚举与切换 (侧栏列表)
-- 操作日志 (写入类操作全部留痕, 含时间戳和成功/失败)
-- 后端状态指示灯 + 一键重启后端
-- 热插拔后重新枚举显示器 (F5)
-- 前后端全程 UTF-8, 中文显示器描述 / caps 字符串不乱码
-- 后端控制台黑窗完全隐藏 (CREATE_NO_WINDOW, 无割裂感)
+- Multi-monitor enumeration and switching (sidebar list)
+- Operation log (all write operations are recorded with timestamp and success/failure)
+- Backend status indicator + one-click backend restart
+- Re-enumerate monitors after hot-plug (F5)
+- End-to-end UTF-8: Chinese monitor descriptions / caps strings never get garbled
+- Backend console window fully hidden (`CREATE_NO_WINDOW`, no visual glitch)
 
 ---
 
-## 构建前提
+## Build Prerequisites
 
-| 依赖 | 版本 | 用途 | 备注 |
+| Dependency | Version | Purpose | Notes |
 | --- | --- | --- | --- |
-| **MinGW-w64 GCC** | 16.x | 编译 C 后端 | 自带 `libdxva2.a` 和 Dxva2 头文件, **不需要 Windows SDK** |
-| **Rust** (rustup) | 1.77+ | 编译 Tauri 主进程 | 需要 `x86_64-pc-windows-msvc` target |
-| **MSVC Build Tools** | VS 2019+ | Rust 的链接器 | 装 "使用 C++ 的桌面开发" 工作负载 |
-| **Node.js** | 18+ | 前端构建 / Tauri CLI | 只是工具链, 运行时不依赖 |
-| **WebView2 Runtime** | 任意 | Tauri 渲染 | Win11 和较新的 Win10 已内置 |
-| Python 3 | 3.x | 仅用于生成图标 / 测试脚本 | 可选 |
+| **MinGW-w64 GCC** | 16.x | Compiles the C backend | Ships `libdxva2.a` and Dxva2 headers — **no Windows SDK needed** |
+| **Rust** (rustup) | 1.77+ | Compiles the Tauri main process | Needs the `x86_64-pc-windows-msvc` target |
+| **MSVC Build Tools** | VS 2019+ | Linker for Rust | Install the "Desktop development with C++" workload |
+| **Node.js** | 18+ | Frontend build / Tauri CLI | Toolchain only; not a runtime dependency |
+| **WebView2 Runtime** | any | Tauri rendering | Built into Windows 11 and newer Windows 10 |
+| Python 3 | 3.x | Only for icon generation / test scripts | Optional |
 
-> C 后端**不依赖 MSVC** —— 只用 MinGW 就能编出 `monitor_rpc.exe`。
-> MSVC 只是给 Rust 当链接器用。
+> The C backend does **not** depend on MSVC — MinGW alone builds `monitor_rpc.exe`.
+> MSVC only serves as the linker for Rust.
 
 ---
 
-## 构建与运行
+## Build & Run
 
 ```powershell
 cd monitor_ctrl_tauri
 
-# 1) 编译 C 后端 (产出 native/monitor_rpc.exe)
+# 1) compile the C backend (produces native/monitor_rpc.exe)
 cd native; .\build.bat; cd ..
 
-# 2) 安装前端工具链
+# 2) install the frontend toolchain
 npm install
 
-# 3) 把 exe 复制成带目标三元组后缀的名字 (Tauri externalBin 的要求)
+# 3) copy the exe under its target-triple-suffixed name (Tauri externalBin requirement)
 npm run sidecar
 
-# 4) 开发模式运行 (会自动先跑 sidecar 再起 tauri dev)
+# 4) run in dev mode (runs sidecar first, then tauri dev)
 npm run dev
 
-# 5) 打包成 NSIS 安装包 (产出 src-tauri/target/release/bundle/nsis/*.exe)
+# 5) package into an NSIS installer (produces src-tauri/target/release/bundle/nsis/*.exe)
 npm run build
 ```
 
-`package.json` 里的脚本:
+`package.json` scripts:
 
-| 脚本 | 实际命令 |
+| Script | Actual command |
 | --- | --- |
 | `npm run native` | `cd native && build.bat` |
 | `npm run sidecar` | `node scripts/stage-sidecar.mjs` |
 | `npm run dev` | `npm run sidecar && tauri dev` |
 | `npm run build` | `npm run sidecar && tauri build` |
 
-### 单独测试 C 后端
+### Testing the C backend standalone
 
-后端不依赖任何前端, 可以单独跑冒烟测试:
+The backend has no frontend dependency and can be smoke-tested on its own:
 
 ```powershell
 cd native
-python test_rpc.py            # 自动测试: ping / 枚举 / 读属性 / 边界情况
-python test_rpc.py --write    # 额外测一次亮度写入往返
-python test_rpc.py -i         # 交互模式, 手工敲 JSON 请求
+python test_rpc.py            # automated tests: ping / enumeration / read props / edge cases
+python test_rpc.py --write    # additionally tests one brightness write round-trip
+python test_rpc.py -i         # interactive mode, type JSON requests by hand
 ```
 
-### 重新生成图标
+### Regenerating the icon
 
 ```powershell
-python scripts\make-icon.py   # 纯标准库 (os/struct/zlib), 不需要 Pillow
+python scripts\make-icon.py   # pure stdlib (os/struct/zlib), no Pillow required
 ```
 
 ---
 
-## JSON-RPC 协议参考
+## JSON-RPC Protocol Reference
 
-**传输**: 一行一个 JSON 对象。请求写 stdin, 响应读 stdout。
-**编码**: UTF-8, 行尾 `\n` (两端都强制二进制模式, 不做 CRLF 转换)。
-**日志**: 一律走 stderr。
+**Transport**: one JSON object per line. Requests go to stdin, responses are read from stdout.
+**Encoding**: UTF-8, `\n` line endings (both sides force binary mode; no CRLF conversion).
+**Logging**: everything goes to stderr.
 
-### 请求格式
+### Request format
 
 ```json
 {"id": 1, "method": "get_props", "index": 0}
 ```
 
-### 响应格式
+### Response format
 
 ```json
 {"id": 1, "ok": true, "result": { ... }}
-{"id": 1, "ok": false, "error": "读取 VCP 0x10 失败"}
+{"id": 1, "ok": false, "error": "failed to read VCP 0x10"}
 ```
 
-`id` 由客户端自增, 服务端原样回传。客户端会校验 id 是否匹配。
+`id` is incremented by the client and echoed back verbatim by the server. The client validates that
+the id matches.
 
-### 方法一览
+### Methods
 
 #### `ping`
 
@@ -325,7 +345,7 @@ python scripts\make-icon.py   # 纯标准库 (os/struct/zlib), 不需要 Pillow
    }}
 ```
 
-不支持的属性是 `null`, 不支持的列表是 `[]`。
+Unsupported properties are `null`; unsupported lists are `[]`.
 
 #### `get_info`
 
@@ -343,7 +363,7 @@ python scripts\make-icon.py   # 纯标准库 (os/struct/zlib), 不需要 Pillow
 
 #### `enum_tables`
 
-一次性拿到所有枚举表, 避免逐字段请求:
+Fetches all enum tables in one shot, avoiding per-field requests:
 
 ```json
 → {"id":5,"method":"enum_tables","index":0}
@@ -355,52 +375,54 @@ python scripts\make-icon.py   # 纯标准库 (os/struct/zlib), 不需要 Pillow
    }}
 ```
 
-**`index` 会按该显示器的 caps string 过滤结果**, 详见下一节。
+**`index` filters the results against that monitor's caps string** — see the next section.
 
-#### 枚举表按 caps string 过滤 (重要)
+#### Filtering enum tables by caps string (important)
 
-原始的 `monitor_ctrl.py` / `tkui.py` 把 VESA MCCS 的**全集**塞进下拉框: 18 个输入源
-(含 Tuner / Composite / S-Video)、38 种 OSD 语言、13 种颜色预设。但显示器实际只支持
-其中一小部分 —— 用户在下拉框里选了 HDMI 1, 结果必然是报错。
+The original `monitor_ctrl.py` / `tkui.py` stuffed the **entire** VESA MCCS universe into the
+dropdowns: 18 input sources (Tuner / Composite / S-Video included), 38 OSD languages, 13 color
+presets. But a real monitor only implements a subset of those — picking "HDMI 1" from the list was a
+guaranteed error.
 
-正确做法是解析显示器自己上报的 caps string。它的 `vcp(...)` 段落形如:
+The correct approach is to parse the caps string the monitor reports itself. Its `vcp(...)` section
+looks like:
 
 ```
 vcp(02 04 05 08 10 12 14(04 05 08 0B) 16 18 1A 52 60( 11 12 0F 10) 62 AA(01 02) ... D6(01 04 05)CC(02 0D) DF FD)
 ```
 
-规则:
+The rules:
 
-| caps 里的形态 | 含义 | 本项目的处理 |
+| Shape in caps | Meaning | Handling in this project |
 | --- | --- | --- |
-| `14(04 05 08 0B)` | 支持 VCP 0x14, 且取值限定为 0x04 / 0x05 / 0x08 / 0x0B | 只保留这 4 个 |
-| `16` | 支持 VCP 0x16, 但不限定取值 | 保留全集 |
-| 完全找不到该 VCP 码 | 不支持 | 返回 `[]`, 前端禁用该控件 |
-| 显示器没打开 / 拿不到 caps | 无法判断 | 退回全集 (保证界面至少能渲染) |
+| `14(04 05 08 0B)` | VCP 0x14 supported, values limited to 0x04 / 0x05 / 0x08 / 0x0B | Keep only those 4 |
+| `16` | VCP 0x16 supported, values not restricted | Keep the full list |
+| VCP code not found at all | Not supported | Return `[]`, frontend disables the control |
+| Monitor off / caps unavailable | Cannot tell | Fall back to the full list (keeps the UI renderable) |
 
-以本机为例, 过滤后的效果:
+Filtered result on the author's machine:
 
-| 表 | 全集 | 过滤后 |
+| Table | Full list | After filtering |
 | --- | --- | --- |
-| 输入源 (`0x60`) | 18 项 | `DisplayPort 1` / `DisplayPort 2` / `HDMI 1` / `HDMI 2` |
-| OSD 语言 (`0xCC`) | 38 项 | `English` / `Chinese-simplified` |
-| 颜色预设 (`0x14`) | 13 项 | `5000K` / `6500K` / `9300K` / `User Mode 1` |
-| 电源模式 (`0xD6`) | 2 项 | `on` / `off` |
+| Input source (`0x60`) | 18 items | `DisplayPort 1` / `DisplayPort 2` / `HDMI 1` / `HDMI 2` |
+| OSD language (`0xCC`) | 38 items | `English` / `Chinese-simplified` |
+| Color preset (`0x14`) | 13 items | `5000K` / `6500K` / `9300K` / `User Mode 1` |
+| Power mode (`0xD6`) | 2 items | `on` / `off` |
 
-解析在 `monitor_core.c` 的 `caps_find_vcp_values()` 里, 有两个容易踩的坑:
+The parsing lives in `caps_find_vcp_values()` in `monitor_core.c` and has two easy-to-miss traps:
 
-1. **枚举表可能紧贴前一个 VCP 的右括号**, 中间没有空格:
-   `D6(01 04 05)CC(02 0D)` 里的 `CC` 前一个字符是 `)`, 不是空格。
-   所以判断前导符时不能只认空格和 `(`。
-2. **不能直接用 `strstr` 比较两位十六进制值**:
-   在 `"020D"` 里找 `"20"` 会命中第 2 个字符, 于是 `Serbian`(0x20) 被误判为支持。
-   必须按 2 字符对齐逐对比较。
+1. **An enum table may sit flush against the previous VCP's closing paren, with no space in between**:
+   in `D6(01 04 05)CC(02 0D)`, the `CC` is preceded by `)`, not a space. So the leading-char check must
+   accept more than just space and `(`.
+2. **Do not use `strstr` to compare two-digit hex values**:
+   searching for `"20"` inside `"020D"` hits the 2nd character, falsely marking `Serbian` (0x20) as
+   supported. Pairs must be compared on a 2-character aligned basis.
 
-另外, 这段搜索必须限制在 `vcp(...)` 段落内 (用括号配对找到它的右括号),
-否则 `cmds(01 02 03 07 0C E3 F3)` 里的 `02` / `0C` 也会被误命中。
+Also, the search must be confined to the `vcp(...)` section (find its closing paren by bracket
+matching), otherwise `02` / `0C` in `cmds(01 02 03 07 0C E3 F3)` get falsely matched too.
 
-> `get_props` 的返回值里**已经内嵌**了过滤后的这 4 个列表,
-> 所以渲染控制面板只需要一次 `get_props`, 不用再单独调 `enum_tables`。
+> The `get_props` response **already embeds** these 4 filtered lists, so rendering the control panel
+> needs only one `get_props` call — no separate `enum_tables` round trip.
 
 #### `set_prop`
 
@@ -409,16 +431,17 @@ vcp(02 04 05 08 10 12 14(04 05 08 0B) 16 18 1A 52 60( 11 12 0F 10) 62 AA(01 02) 
 ← {"id":6,"ok":true,"result":{"prop":"brightness","status":"ok"}}
 ```
 
-`prop` → `value` 类型:
+`prop` → `value` types:
 
-| `prop` | `value` 类型 | 例子 |
+| `prop` | `value` type | Example |
 | --- | --- | --- |
-| `brightness` / `contrast` / `color_temperature` | 整数 | `80` / `4200` |
-| `rgb_gain` | 三元整数数组 | `[60,55,50]` |
-| `color_preset` / `osd_language` / `power_mode` / `input_src` | 字符串 | `"6500K"` |
-| `vcp:<VCP 名>` | 整数 | `"vcp:Luminance"` → `80` |
+| `brightness` / `contrast` / `color_temperature` | integer | `80` / `4200` |
+| `rgb_gain` | array of 3 integers | `[60,55,50]` |
+| `color_preset` / `osd_language` / `power_mode` / `input_src` | string | `"6500K"` |
+| `vcp:<VCP name>` | integer | `"vcp:Luminance"` → `80` |
 
-`vcp:` 前缀是通用逃生口, 可以直接写码表里的任意 VCP 名 (如 `vcp:Restore Factory Defaults`)。
+The `vcp:` prefix is the generic escape hatch — you can write any VCP name from the code table
+(e.g. `vcp:Restore Factory Defaults`).
 
 #### `action`
 
@@ -427,7 +450,7 @@ vcp(02 04 05 08 10 12 14(04 05 08 0B) 16 18 1A 52 60( 11 12 0F 10) 62 AA(01 02) 
 ← {"id":7,"ok":true,"result":{"action":"auto_setup","status":"ok"}}
 ```
 
-`action` 取值: `auto_setup` | `reset_factory`
+`action` values: `auto_setup` | `reset_factory`
 
 #### `shutdown`
 
@@ -436,189 +459,200 @@ vcp(02 04 05 08 10 12 14(04 05 08 0B) 16 18 1A 52 60( 11 12 0F 10) 62 AA(01 02) 
 ← {"id":8,"ok":true,"result":{"status":"bye"}}
 ```
 
-### Tauri 命令 (前端 → Rust)
+### Tauri commands (frontend → Rust)
 
-前端通过 `invoke()` 调这些命令, 它们再转成上面的 JSON-RPC:
+The frontend calls these via `invoke()`; they translate into the JSON-RPC above:
 
-| 命令 | 参数 | 返回 |
+| Command | Arguments | Returns |
 | --- | --- | --- |
-| `rpc` | `{method, params}` | 后端 `result` 对象 |
+| `rpc` | `{method, params}` | backend `result` object |
 | `rpc_batch` | `{calls: [{key, method, params}]}` | `{key: {ok, result \| error}}` |
-| `enum_tables` | `{index}` | 四个枚举表的合集 (已按 caps 过滤) |
+| `enum_tables` | `{index}` | combined enum tables (already caps-filtered) |
 | `backend_status` | — | `{running: bool}` |
-| `restart_backend` | — | 新后端的 exe 路径 |
+| `restart_backend` | — | path of the new backend exe |
 | `get_log` | — | `[{time, level, message}]` |
 | `clear_log` | — | `null` |
 
-`AppState::rpc` **在整次调用期间持有互斥锁**, 这是 DDC/CI 串行化保证的落点。
+**`AppState::rpc` holds the mutex for the entire call** — that is where the DDC/CI serialization guarantee lives.
 
-### 错误码 (C 侧 `MonResult`)
+### Error codes (C-side `MonResult`)
 
-| 值 | 名称 | 含义 |
+| Value | Name | Meaning |
 | --- | --- | --- |
-| 0 | `MON_OK` | 成功 |
-| -1 | `MON_ERR_ARG` | 参数非法 |
-| -2 | `MON_ERR_NO_MONITOR` | 找不到该索引的显示器 |
-| -3 | `MON_ERR_OPEN` | 打开物理显示器句柄失败 |
-| -4 | `MON_ERR_CAPS` | 读取能力字符串失败 |
-| -5 | `MON_ERR_VCP` | 读写 VCP 失败 (通常是 I2C 校验和错误) |
-| -6 | `MON_ERR_RANGE` | 值超出范围 |
-| -7 | `MON_ERR_UNSUPPORTED` | 显示器不支持该属性 |
-| -8 | `MON_ERR_NOMEM` | 内存不足 |
+| 0 | `MON_OK` | Success |
+| -1 | `MON_ERR_ARG` | Invalid argument |
+| -2 | `MON_ERR_NO_MONITOR` | No monitor found at that index |
+| -3 | `MON_ERR_OPEN` | Failed to open the physical monitor handle |
+| -4 | `MON_ERR_CAPS` | Failed to read the capability string |
+| -5 | `MON_ERR_VCP` | VCP read/write failed (usually an I2C checksum error) |
+| -6 | `MON_ERR_RANGE` | Value out of range |
+| -7 | `MON_ERR_UNSUPPORTED` | The monitor does not support this feature |
+| -8 | `MON_ERR_NOMEM` | Out of memory |
 
-前端 `friendlyError()` 会把 `MON_ERR_*` 翻译成中文提示。
+The frontend's `friendlyError()` translates `MON_ERR_*` into friendly Chinese messages.
 
 ---
 
-## 两个硬件坑 (重要)
+## Two Hardware Pitfalls (Important)
 
-### 1. `hPhysicalMonitor` 可能是 `0`, 但 DDC/CI 照样能用
+### 1. `hPhysicalMonitor` may be `0`, and DDC/CI still works
 
-`GetPhysicalMonitorsFromHMONITOR` 返回的 `PHYSICAL_MONITOR.hPhysicalMonitor` 在本机上就是 `0`。
-如果按直觉写 `if (handle == NULL) return ERROR;` 就会**误判成"打不开显示器"**, 所有属性读出来都是 `null`。
+On the author's machine, the `PHYSICAL_MONITOR.hPhysicalMonitor` returned by
+`GetPhysicalMonitorsFromHMONITOR` is literally `0`. If you intuitively write
+`if (handle == NULL) return ERROR;`, you will falsely conclude "monitor cannot be opened" and every
+property reads back as `null`.
 
-更反直觉的是: `GetCapabilitiesStringLength(NULL, &len)` **居然能成功**。
+Even more counterintuitive: `GetCapabilitiesStringLength(NULL, &len)` **succeeds**.
 
-> **结论**: 永远不要用 `hPhysicalMonitor` 是否为 0 来判断有效性。原 Python 版从来不检查这个值, 所以它是对的。
-> 本项目的 `mon_send_vcp` / `mon_read_vcp` 里所有 `handle != NULL` 的检查都已移除, `mon_close()` 也无条件调 `DestroyPhysicalMonitor` (传 0 是安全的空操作)。
+> **Conclusion**: never use `hPhysicalMonitor == 0` to judge validity. The original Python version
+> never checked this value, and it was right.
+> In this project all `handle != NULL` checks in `mon_send_vcp` / `mon_read_vcp` have been removed,
+> and `mon_close()` unconditionally calls `DestroyPhysicalMonitor` (passing 0 is a safe no-op).
 
-### 2. DDC/CI 的 I2C 读取**天然会间歇失败**
+### 2. DDC/CI I2C reads **naturally fail intermittently**
 
-实测原 Python 版连续读 8 次 caps, **只有 7 次成功**, 失败时抛 `OSError [WinError -1071241845]` (校验和错误)。
+Measured on the original Python version: reading the caps 8 consecutive times, **only 7 succeeded**;
+on failure it raised `OSError [WinError -1071241845]` (a checksum error).
 
-这不是 bug, 是 I2C 总线的物理特性 —— 显示器固件响应慢、时序抖动、总线噪声都会导致校验和失败。
+This is not a bug — it is a physical property of the I2C bus. Slow firmware response, timing jitter,
+and bus noise all cause checksum failures.
 
-> **结论**: 每一次收发都要重试。本项目在 `monitor_core.c` 里加了:
+> **Conclusion**: retry every single transaction. This project adds, in `monitor_core.c`:
 > ```c
 > #define MON_RETRY_TIMES   3
 > #define MON_RETRY_DELAY_MS 15
 > ```
-> `mon_send_vcp` / `mon_read_vcp` / 两次 caps 调用都套了重试循环。
-> **实测效果: 连续 5 次运行全部成功** —— 比原 Python 版更稳。
+> `mon_send_vcp` / `mon_read_vcp` and both caps calls are wrapped in retry loops.
+> **Measured result: 5 consecutive runs, all succeeded** — more stable than the original Python version.
 
 ---
 
-## 常见问题
+## FAQ
 
-**Q: 提示"未检测到显示器"或所有属性都是空的**
+**Q: "No monitor detected" or every property is empty**
 
-按顺序排查:
+Check in order:
 
-1. 显示器 OSD 菜单里找 `DDC/CI` 或 `DDC/CI Support`, 确认是 **On**。这是最常见的原因。
-2. 换一根线或换一个接口试 —— 部分廉价 HDMI 转接器只走视频, 不透传 DDC/CI 的 I2C 通道。
-3. 中间是否有 KVM / 切换器 / 采集卡? 这类设备经常直接掐断 DDC/CI。
-4. 笔记本内屏不支持, 必须接外接显示器。
-5. 点一下标题栏的刷新按钮重试 —— I2C 偶发失败很常见 (见上文硬件坑 2)。
+1. Look for `DDC/CI` or `DDC/CI Support` in the monitor's OSD menu and make sure it is **On**. This is the most common cause.
+2. Try a different cable or port — some cheap HDMI adapters carry video only and do not pass the DDC/CI I2C channel through.
+3. Is there a KVM / switch / capture card in between? These often cut DDC/CI entirely.
+4. Laptop built-in panels are not supported; an external monitor is required.
+5. Click the refresh button in the title bar and retry — intermittent I2C failures are common (see hardware pitfall 2 above).
 
-**Q: 提示"读取显示器能力字符串失败 (DDC/CI 通信不稳定, 可重试)"**
+**Q: "Failed to read the monitor capability string (DDC/CI communication unstable, retry)"**
 
-同上第 5 条。这是 I2C 校验和失败, 点「重试」通常一次就过。后端内部已经重试 3 次, 仍然失败才会上报。
+Same as item 5 above. It is an I2C checksum failure; clicking "retry" usually passes on the first try. The backend already retries 3 times internally and only reports after all attempts fail.
 
-**Q: 后端状态显示"未连接"**
+**Q: Backend status shows "Not connected"**
 
-C 后端子进程没起来。点一下状态灯或按 F5 重启后端。若一直失败, 说明安装不完整 ——
-`monitor_rpc.exe` 应位于安装目录下 (和主程序同级)。
+The C backend child process did not start. Click the status dot or press F5 to restart the backend.
+If it keeps failing, the installation is incomplete — `monitor_rpc.exe` should sit next to the main
+executable in the install directory.
 
-**Q: 下拉框里没有我要的选项**
+**Q: An option is missing from my dropdown**
 
-这是**故意的**。项目会解析显示器上报的 caps string, 只列出它真正声明支持的取值
-(见 [枚举表按 caps string 过滤](#枚举表按-caps-string-过滤-重要))。
-如果你的显示器确实支持某项但 caps 里没声明, 那是显示器固件的问题, 可以用 `set_prop`
-的 `vcp:<VCP名>` 逃生口强行下发。
+That is **intentional**. The project parses the monitor's reported caps string and only lists values
+it actually declares support for (see [Filtering enum tables by caps string](#filtering-enum-tables-by-caps-string-important)).
+If your monitor genuinely supports a value it does not declare in caps, that is a firmware issue —
+you can force it through the `vcp:<VCP name>` escape hatch of `set_prop`.
 
-**Q: 为什么拖动滑块的时候画面不跟着变?**
+**Q: Why doesn't the picture follow the slider while I drag it?**
 
-这是刻意设计。DDC/CI 一次读写要几十到几百毫秒, 拖动过程中连续下发会把 I2C 总线打爆,
-显示器固件会开始返回校验和错误。所以**只在松手 (pointerup) 时下发一次**。
-数字会实时跟着滑块变, 但硬件是在松手那一刻才改。
+By design. A single DDC/CI read/write takes tens to hundreds of milliseconds; firing commands
+continuously while dragging would saturate the I2C bus and the firmware would start returning
+checksum errors. So the write happens **once, on pointerup**. The number tracks the slider in real
+time, but the hardware only changes on release.
 
-**Q: 会不会把显示器写坏?**
+**Q: Can this wear out my monitor?**
 
-颜色预设和 OSD 语言存在显示器 EEPROM 里, 反复写会磨损。所以前端在提交前会比对当前值,
-**值没变就不下发**。这个保护逻辑是从原 Python 版继承的。
+Color presets and OSD language live in the monitor's EEPROM; repeated writes wear it out. So the
+frontend compares against the current value before committing and **skips the write if nothing
+changed**. This protection is inherited from the original Python version.
 
-**Q: 支持笔记本内屏 / 虚拟显示器吗?**
+**Q: Does it support laptop built-in panels / virtual displays?**
 
-不支持。Dxva2 的 Low-Level Monitor Configuration API 只能操作走 DDC/CI 的物理显示器。
+No. The Dxva2 Low-Level Monitor Configuration API can only operate physical monitors that speak
+DDC/CI.
 
-**Q: 打包出来的 exe 为什么这么小 (1.5 MB)?**
+**Q: Why is the packaged exe so small (1.5 MB)?**
 
-因为复用了系统自带的 WebView2, 不像 Electron 那样把整个 Chromium 塞进安装包。
+Because it reuses the system WebView2 instead of shipping an entire Chromium like Electron does.
 
 ---
 
-## 目录结构
+## Directory Structure
 
 ```
 monitor_ctrl_tauri/
-├── native/                     # C 后端 (独立可执行文件)
-│   ├── monitor_rpc.c           #   stdio JSON-RPC 服务器 (main)
-│   ├── monitor_core.c/.h       #   Dxva2 封装 + 重试逻辑
-│   ├── vcp_code.c/.h           #   VESA MCCS VCP 码表
-│   ├── mjson.c/.h              #   极简 JSON 读写
-│   ├── test_rpc.py             #   冒烟测试 / 交互调试
-│   └── build.bat               #   MinGW 构建脚本
-├── src-tauri/                  # Tauri 主进程 (Rust)
+├── native/                     # C backend (standalone executable)
+│   ├── monitor_rpc.c           #   stdio JSON-RPC server (main)
+│   ├── monitor_core.c/.h       #   Dxva2 wrapper + retry logic
+│   ├── vcp_code.c/.h           #   VESA MCCS VCP code table
+│   ├── mjson.c/.h              #   minimal JSON read/write
+│   ├── test_rpc.py             #   smoke tests / interactive debugging
+│   └── build.bat               #   MinGW build script
+├── src-tauri/                  # Tauri main process (Rust)
 │   ├── src/
-│   │   ├── lib.rs              #   Builder / 生命周期 / 命令注册
-│   │   ├── main.rs             #   入口 (release 下隐藏控制台)
-│   │   └── sidecar.rs          #   子进程管理 / 串行化 / 日志
+│   │   ├── lib.rs              #   Builder / lifecycle / command registration
+│   │   ├── main.rs             #   entry point (console hidden in release)
+│   │   └── sidecar.rs          #   child-process management / serialization / logging
 │   ├── capabilities/default.json
 │   ├── icons/icon.ico
-│   ├── build.rs                #   注入目标三元组 + Windows manifest
-│   ├── app.manifest            #   Windows 应用 manifest (UAC 级别)
+│   ├── build.rs                #   injects the target triple + Windows manifest
+│   ├── app.manifest            #   Windows app manifest (UAC level)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── ui/                         # 前端 (无框架)
-│   ├── index.html              #   主界面
-│   ├── popup.html              #   托盘快捷面板
-│   ├── popup.js                #   快捷面板逻辑
-│   ├── style.css               #   设计令牌 + 深色/浅色主题
-│   └── app.js                  #   主界面状态管理 / 渲染 / 交互
+├── ui/                         # frontend (no framework)
+│   ├── index.html              #   main interface
+│   ├── popup.html              #   tray quick panel
+│   ├── popup.js                #   quick-panel logic
+│   ├── style.css               #   design tokens + dark/light themes
+│   └── app.js                  #   main-interface state / rendering / interaction
 ├── scripts/
-│   ├── stage-sidecar.mjs       #   把 exe 复制成带三元组后缀的名字
-│   └── make-icon.py            #   程序化生成 icon.ico (纯标准库)
+│   ├── stage-sidecar.mjs       #   copies the exe under a triple-suffixed name
+│   └── make-icon.py            #   programmatically generates icon.ico (pure stdlib)
 ├── package.json
-├── README.md                   #   本文件
+├── README.md                   #   this file (English)
+├── README.zh-CN.md             #   README in Simplified Chinese
 ├── LICENSE                     #   MIT
 ├── .gitattributes
 └── .gitignore
 ```
 
-**产物位置** (构建后):
+**Artifacts** (after a build):
 
-| 产物 | 路径 |
+| Artifact | Path |
 | --- | --- |
-| C 后端 | `native/monitor_rpc.exe` (~93 KB) |
-| 开发版主程序 | `src-tauri/target/debug/monitor-ctrl-tauri.exe` |
-| 发布版主程序 | `src-tauri/target/release/monitor-ctrl-tauri.exe` (~4.6 MB) |
-| **NSIS 安装包** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.0.0_x64-setup.exe` (~1.5 MB) |
+| C backend | `native/monitor_rpc.exe` (~93 KB) |
+| Dev main program | `src-tauri/target/debug/monitor-ctrl-tauri.exe` |
+| Release main program | `src-tauri/target/release/monitor-ctrl-tauri.exe` (~4.6 MB) |
+| **NSIS installer** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.3.0_x64-setup.exe` (~1.5 MB) |
 
 ---
 
-## 当前状态
+## Current Status
 
-| 项目 | 状态 |
+| Item | Status |
 | --- | --- |
-| C 后端 (5 个模块) | ✅ 编译零警告 |
-| 硬件实测 (亮度/对比度/RGB/色温/预设/语言/电源/输入源) | ✅ 全部与原 Python 版一致 |
-| DDC/CI 稳定性 | ✅ 连续 5 次运行全成功 (原版 7/8) |
-| caps string 枚举过滤 | ✅ 端到端打通 (C → Rust → 前端) |
-| 冒烟测试 `test_rpc.py` | ✅ 全绿 (含边界情况) |
-| Tauri 应用编译 / 启动 | ✅ |
-| 后端黑窗隐藏 | ✅ CREATE_NO_WINDOW, 无控制台窗口 |
-| 系统托盘常驻 | ✅ × 缩托盘 / 左键唤起 / 右键菜单退出 |
-| 托盘快捷面板 | ✅ 亮度 / 输入源 / 关闭显示器 |
-| UI 视觉验证 | ✅ 已截图确认 |
-| NSIS 安装包 | ✅ 1.5 MB |
-| 文档 | ✅ 本文件 |
+| C backend (5 modules) | ✅ compiles with zero warnings |
+| Hardware-tested (brightness/contrast/RGB/temp/preset/language/power/input) | ✅ all consistent with the original Python version |
+| DDC/CI stability | ✅ 5 consecutive runs all succeeded (original: 7/8) |
+| caps-string enum filtering | ✅ end-to-end (C → Rust → frontend) |
+| Smoke test `test_rpc.py` | ✅ all green (incl. edge cases) |
+| Tauri app compile / launch | ✅ |
+| Backend console hidden | ✅ CREATE_NO_WINDOW, no console window |
+| System tray resident | ✅ minimize-to-tray / left-click popup / right-click menu + quit |
+| Tray quick panel | ✅ brightness / input source / power off |
+| UI visual verification | ✅ confirmed via screenshots |
+| NSIS installer | ✅ 1.5 MB |
+| Documentation | ✅ this file |
 
 ---
 
-## 许可
+## License
 
-[MIT](LICENSE)。
+[MIT](LICENSE).
 
-本项目的 C 后端与前端逻辑移植自 Python/tkinter 版的
+The C backend and frontend logic are ported from the Python/tkinter
 [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor_ctrl)
-(Copyright (c) 2018 Miguel X)，沿用其 MIT 许可条款。
+(Copyright (c) 2018 Miguel X), under its MIT license terms.
