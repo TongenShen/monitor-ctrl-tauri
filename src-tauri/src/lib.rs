@@ -41,7 +41,8 @@ pub fn run() {
                 .decorations(false)
                 .always_on_top(true)
                 .resizable(false)
-                .inner_size(260.0, 240.0)
+                // 高度按内容算: 亮度 + 输入源 + 关闭显示器 + 重新枚举, 约 290 才不挤
+                .inner_size(260.0, 290.0)
                 .skip_taskbar(true)
                 .visible(false)
                 .build()?;

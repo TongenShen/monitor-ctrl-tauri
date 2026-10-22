@@ -9,6 +9,8 @@
     body {
       padding: 12px;
       min-width: 240px;
+      /* 万一系统字体放大导致内容超高, 允许滚动而不是被裁掉 */
+      overflow-y: auto;
       background: var(--bg);
       color: var(--fg);
       font-family: var(--font);
@@ -65,6 +67,38 @@
     }
     .btn-off:hover {
       opacity: 0.9;
+    }
+    /* 次级按钮: 重新枚举显示器 */
+    .btn-ghost {
+      width: 100%;
+      padding: 7px;
+      background: transparent;
+      color: var(--fg-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn-ghost:hover:not(:disabled) {
+      background: var(--bg-raised);
+      color: var(--fg);
+      border-color: var(--fg-muted);
+    }
+    .btn-ghost:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    /* 加载失败/未检测到显示器时, 重新枚举是唯一能做的事, 用强调色 */
+    .btn-ghost--accent {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .btn-ghost--accent:hover:not(:disabled) {
+      background: var(--accent-dim);
+      color: var(--accent-hover);
+      border-color: var(--accent-hover);
     }
     .loading {
       color: var(--fg-muted);

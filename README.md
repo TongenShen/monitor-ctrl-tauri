@@ -202,9 +202,12 @@ any VCP code.
 - **Clicking the window × does not quit** — it minimizes to the system tray (the backend stays
   resident; reopening is instant)
 - **Left-click the tray icon**: pops up a quick panel (brightness slider / input source selector /
-  power off)
+  power off / re-enumerate monitors)
 - **Right-click the tray icon**: menu with "Show main window" and "Exit"
 - The quick panel auto-hides when it loses focus and is positioned above the tray, 12 px clear of the taskbar
+- "Re-enumerate monitors" in the quick panel restarts the C backend and re-runs enumeration — the same
+  logic as the refresh button in the main window, so a power-cycled or re-plugged monitor can be picked
+  up without opening the main window
 
 ### Misc
 
@@ -574,6 +577,27 @@ changed**. This protection is inherited from the original Python version.
 No. The Dxva2 Low-Level Monitor Configuration API can only operate physical monitors that speak
 DDC/CI.
 
+**Q: The build fails with `OS Error 5 (PermissionDenied)` or `Failed to get rustc version`**
+
+If the project lives under a protected directory such as **Desktop**, the unsigned
+`build-script-build.exe` that cargo compiles on the fly is denied permission to write files or
+spawn child processes. Typical output:
+
+```
+Failed to create ...\target\debug\build\xxx\out\probe: OS Error 5
+Failed to get rustc version: Os Error 5 (FormatMessageW() returned error 15100)
+```
+
+This is not a code problem — the same project builds fine from another directory. Fix it by moving
+the target directory outside the protected folder, in `src-tauri/.cargo/config.toml`:
+
+```toml
+[build]
+target-dir = "C:/Users/<you>/AppData/Local/cargo-targets/monitor-ctrl-tauri"
+```
+
+That file contains a machine-specific absolute path and is excluded from version control.
+
 **Q: Why is the packaged exe so small (1.5 MB)?**
 
 Because it reuses the system WebView2 instead of shipping an entire Chromium like Electron does.
@@ -642,7 +666,7 @@ monitor_ctrl_tauri/
 | Tauri app compile / launch | ✅ |
 | Backend console hidden | ✅ CREATE_NO_WINDOW, no console window |
 | System tray resident | ✅ minimize-to-tray / left-click popup / right-click menu + quit |
-| Tray quick panel | ✅ brightness / input source / power off |
+| Tray quick panel | ✅ brightness / input source / power off / re-enumerate monitors |
 | UI visual verification | ✅ confirmed via screenshots |
 | NSIS installer | ✅ 1.5 MB |
 | Documentation | ✅ this file |

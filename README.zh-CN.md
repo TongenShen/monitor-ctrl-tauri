@@ -183,9 +183,11 @@ flowchart TD
 ### 系统托盘
 
 - **点窗口 × 不退出**, 而是最小化到系统托盘 (后端常驻, 再次打开秒开)
-- **左键点托盘图标**: 弹出快捷小面板 (亮度滑块 / 输入源选择 / 关闭显示器)
+- **左键点托盘图标**: 弹出快捷小面板 (亮度滑块 / 输入源选择 / 关闭显示器 / 重新枚举显示器)
 - **右键点托盘图标**: 菜单「显示主窗口」「退出」
 - 快捷面板失焦自动收起, 定位在托盘上方不贴任务栏
+- 快捷面板里的「重新枚举显示器」= 重启 C 后端进程后重新枚举, 与主窗口右上角的刷新按钮
+  同一套逻辑。显示器断电重启 / 换线 / 热插拔后不必再打开主窗口
 
 ### 其他
 
@@ -541,6 +543,26 @@ C 后端子进程没起来。点一下状态灯或按 F5 重启后端。若一�
 
 不支持。Dxva2 的 Low-Level Monitor Configuration API 只能操作走 DDC/CI 的物理显示器。
 
+**Q: 编译时报 `OS Error 5 (PermissionDenied)` 或 `Failed to get rustc version`**
+
+如果项目放在**桌面 (Desktop)** 这类受保护目录下, cargo 现场编译出的未签名
+`build-script-build.exe` 会被安全策略拒绝写文件 / 启动子进程, 报错形如:
+
+```
+Failed to create ...\target\debug\build\xxx\out\probe: OS Error 5
+Failed to get rustc version: Os Error 5 (FormatMessageW() returned error 15100)
+```
+
+这不是代码问题, 同一个项目换个目录就能编过。解决: 把 target 目录挪出受保护目录,
+新建 `src-tauri/.cargo/config.toml`:
+
+```toml
+[build]
+target-dir = "C:/Users/<你的用户名>/AppData/Local/cargo-targets/monitor-ctrl-tauri"
+```
+
+该文件含本机绝对路径, 已排除在版本控制外。
+
 **Q: 打包出来的 exe 为什么这么小 (1.5 MB)?**
 
 因为复用了系统自带的 WebView2, 不像 Electron 那样把整个 Chromium 塞进安装包。
@@ -609,7 +631,7 @@ monitor_ctrl_tauri/
 | Tauri 应用编译 / 启动 | ✅ |
 | 后端黑窗隐藏 | ✅ CREATE_NO_WINDOW, 无控制台窗口 |
 | 系统托盘常驻 | ✅ × 缩托盘 / 左键唤起 / 右键菜单退出 |
-| 托盘快捷面板 | ✅ 亮度 / 输入源 / 关闭显示器 |
+| 托盘快捷面板 | ✅ 亮度 / 输入源 / 关闭显示器 / 重新枚举显示器 |
 | UI 视觉验证 | ✅ 已截图确认 |
 | NSIS 安装包 | ✅ 1.5 MB |
 | 文档 | ✅ 本文件 |
