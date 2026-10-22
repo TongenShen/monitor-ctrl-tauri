@@ -32,7 +32,7 @@ The original project [`dot-osk/monitor_ctrl`](https://github.com/dot-osk/monitor
 
 ### End users (install directly)
 
-1. Grab the installer `MonitorCtrl_1.3.0_x64-setup.exe`
+1. Grab the installer `MonitorCtrl_1.3.1_x64-setup.exe`
    (at `src-tauri/target/release/bundle/nsis/`, about 1.5 MB)
 2. Double-click to install — installs for the current user
 3. Launch "MonitorCtrl"
@@ -650,7 +650,7 @@ monitor_ctrl_tauri/
 | C backend | `native/monitor_rpc.exe` (~93 KB) |
 | Dev main program | `src-tauri/target/debug/monitor-ctrl-tauri.exe` |
 | Release main program | `src-tauri/target/release/monitor-ctrl-tauri.exe` (~4.6 MB) |
-| **NSIS installer** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.3.0_x64-setup.exe` (~1.5 MB) |
+| **NSIS installer** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.3.1_x64-setup.exe` (~1.5 MB) |
 
 ---
 

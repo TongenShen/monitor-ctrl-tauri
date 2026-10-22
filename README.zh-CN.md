@@ -31,7 +31,7 @@
 
 ### 普通用户 (直接安装)
 
-1. 取安装包 `MonitorCtrl_1.3.0_x64-setup.exe`
+1. 取安装包 `MonitorCtrl_1.3.1_x64-setup.exe`
    (位于 `src-tauri/target/release/bundle/nsis/`, 约 1.5 MB)
 2. 双击安装 —— 按当前用户安装
 3. 启动「MonitorCtrl」
@@ -615,7 +615,7 @@ monitor_ctrl_tauri/
 | C 后端 | `native/monitor_rpc.exe` (~93 KB) |
 | 开发版主程序 | `src-tauri/target/debug/monitor-ctrl-tauri.exe` |
 | 发布版主程序 | `src-tauri/target/release/monitor-ctrl-tauri.exe` (~4.6 MB) |
-| **NSIS 安装包** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.3.0_x64-setup.exe` (~1.5 MB) |
+| **NSIS 安装包** | `src-tauri/target/release/bundle/nsis/MonitorCtrl_1.3.1_x64-setup.exe` (~1.5 MB) |
 
 ---
 
